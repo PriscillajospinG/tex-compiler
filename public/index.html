@@ -4,94 +4,193 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>TeX Compiler</title>
-  <meta name="description" content="Write LaTeX, compile it, and preview the PDF.">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232b59c3'/><text x='16' y='22' font-family='Georgia,serif' font-size='15' fill='white' text-anchor='middle'>TeX</text></svg>">
+  <meta name="description" content="Write or upload LaTeX, compile it, and preview the PDF.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%233654d6'/><text x='16' y='21.5' font-family='Georgia,serif' font-size='14' font-weight='700' fill='white' text-anchor='middle'>TeX</text></svg>">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <a class="skip-link" href="#editor">Skip to editor</a>
 
-  <header class="site-header">
-    <div class="wrap">
-      <h1>TeX Compiler</h1>
-      <p class="lead">Write or paste LaTeX into the editor, press <strong>Compile</strong>, and your PDF appears in the preview.
-        If something goes wrong, you'll see what happened and which line to check.</p>
+  <header class="appbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">TeX</span>
+      <div class="brand-text">
+        <h1>TeX Compiler</h1>
+        <p>Write or upload LaTeX, press Compile, and preview your PDF.</p>
+      </div>
+    </div>
+    <div class="appbar-actions">
+      <label class="select">
+        <span class="visually-hidden">TeX engine</span>
+        <select id="engine" title="TeX engine">
+          <option value="pdflatex">pdfLaTeX</option>
+          <option value="xelatex">XeLaTeX</option>
+          <option value="lualatex">LuaLaTeX</option>
+        </select>
+      </label>
+      <button type="button" id="compile" class="btn btn-primary" aria-keyshortcuts="Control+Enter Meta+Enter">
+        <span class="spinner" aria-hidden="true"></span>
+        <svg class="icon btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12-7.5z"/></svg>
+        <span class="btn-label">Compile</span>
+        <kbd class="btn-kbd" id="compile-kbd" aria-hidden="true">Ctrl ↵</kbd>
+      </button>
     </div>
   </header>
 
-  <main class="wrap workspace">
-    <section class="panel panel-editor" aria-labelledby="editor-title">
-      <div class="panel-head">
-        <h2 id="editor-title" class="panel-title"><span class="badge badge-src" aria-hidden="true">.tex</span> LaTeX source</h2>
-        <div class="toolbar">
-          <label class="engine">
-            <span class="visually-hidden">TeX engine</span>
-            <select id="engine" title="TeX engine">
-              <option value="pdflatex">pdfLaTeX</option>
-              <option value="xelatex">XeLaTeX</option>
-              <option value="lualatex">LuaLaTeX</option>
-            </select>
-          </label>
-          <button type="button" id="reset" class="btn btn-ghost">Reset example</button>
-          <button type="button" id="compile" class="btn btn-primary" aria-describedby="shortcut">
-            <span class="spinner" aria-hidden="true"></span>
-            <span class="btn-label">Compile</span>
-          </button>
+  <div class="layout">
+    <!-- ===== Sidebar: project menu + files ===== -->
+    <aside class="sidebar" id="sidebar" aria-label="Project">
+      <nav class="menu" aria-label="Project actions">
+        <p class="menu-label">Project</p>
+        <button type="button" class="menu-item" id="new-file">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V8z"/><path d="M14 3v5h5M12 11v6M9 14h6"/></svg>
+          New file
+        </button>
+        <button type="button" class="menu-item" id="upload-files">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5V15M16.5 8.5 12 4 7.5 8.5M12 4v11"/></svg>
+          Upload files
+        </button>
+        <button type="button" class="menu-item" id="upload-folder">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 18.5v-12A1.5 1.5 0 0 1 5 5h4.2l2 2.5H19a1.5 1.5 0 0 1 1.5 1.5v9.5A1.5 1.5 0 0 1 19 20H5a1.5 1.5 0 0 1-1.5-1.5z"/><path d="M12 17v-6M9.5 13.5 12 11l2.5 2.5"/></svg>
+          Upload folder
+        </button>
+        <button type="button" class="menu-item" id="reset">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.5"/><path d="M4 4v4.5h4.5"/></svg>
+          Reset to example
+        </button>
+        <input type="file" id="file-input" multiple hidden>
+        <input type="file" id="folder-input" webkitdirectory multiple hidden>
+      </nav>
+
+      <div class="files" id="dropzone">
+        <div class="files-head">
+          <p class="menu-label" id="files-label">Files</p>
+          <span class="count" id="file-count"></span>
+        </div>
+        <ul class="tree" id="tree" aria-labelledby="files-label"></ul>
+        <p class="drop-hint">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M4 19h16"/></svg>
+          Drop files or folders here
+        </p>
+        <div class="drop-overlay" aria-hidden="true"><span>Drop to add to project</span></div>
+      </div>
+    </aside>
+
+    <!-- ===== Editor ===== -->
+    <section class="pane" aria-labelledby="editor-title">
+      <div class="pane-head">
+        <h2 class="pane-title" id="editor-title">
+          <span class="file-icon" id="active-icon" aria-hidden="true"></span>
+          <span class="path" id="active-path">main.tex</span>
+          <span class="tag tag-main" id="active-main" hidden>Main file</span>
+        </h2>
+        <div class="pane-actions">
+          <button type="button" class="btn btn-quiet btn-sm" id="set-main">Set as main</button>
+          <button type="button" class="btn btn-quiet btn-sm" id="rename">Rename</button>
+          <button type="button" class="btn btn-quiet btn-sm btn-danger-text" id="delete">Delete</button>
         </div>
       </div>
 
       <div class="editor" id="editor-frame">
         <div class="gutter" id="gutter" aria-hidden="true"></div>
         <textarea id="editor" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off"
-          wrap="off" aria-label="LaTeX source code" aria-describedby="shortcut"></textarea>
+          wrap="off" aria-label="Editor" aria-describedby="editor-help"></textarea>
       </div>
-      <p class="panel-foot" id="shortcut">
-        <span id="cursor-pos">Line 1, column 1</span>
-        <span class="sep" aria-hidden="true">·</span>
-        Press <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Enter</kbd> to compile. <kbd>Tab</kbd> moves to the next control.
+      <div class="viewer" id="viewer" hidden></div>
+
+      <p class="statusbar" id="editor-help">
+        <span id="cursor-pos">Ln 1, Col 1</span>
+        <span id="save-state">Saved in this browser</span>
+        <span class="hide-sm"><kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Enter</kbd> compiles · <kbd>Tab</kbd> leaves the editor</span>
       </p>
     </section>
 
-    <section class="panel panel-preview" aria-labelledby="preview-title">
-      <div class="panel-head">
-        <h2 id="preview-title" class="panel-title"><span class="badge badge-pdf" aria-hidden="true">PDF</span> Preview</h2>
-        <div class="toolbar">
-          <a id="open" class="btn btn-ghost" href="#" target="_blank" rel="noopener" hidden>Open in new tab</a>
-          <a id="download" class="btn btn-secondary" href="#" download="document.pdf" aria-disabled="true" tabindex="-1">Download PDF</a>
+    <!-- ===== Preview ===== -->
+    <section class="pane" aria-labelledby="preview-title" id="preview-pane">
+      <div class="pane-head">
+        <h2 class="pane-title" id="preview-title">
+          Preview
+          <span class="pill" id="pill" data-state="idle">Not compiled</span>
+        </h2>
+        <div class="pane-actions">
+          <a id="open" class="btn btn-quiet btn-sm" href="#" target="_blank" rel="noopener" hidden>Open in new tab</a>
+          <a id="download" class="btn btn-secondary btn-sm" href="#" download="document.pdf" aria-disabled="true" tabindex="-1">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5V15M7.5 10.5 12 15l4.5-4.5M12 15V4"/></svg>
+            Download PDF
+          </a>
         </div>
       </div>
 
       <div class="preview" id="preview">
-        <div id="status" class="status" role="status" aria-live="polite"></div>
+        <div id="status" class="visually-hidden" role="status" aria-live="polite"></div>
 
-        <div id="empty" class="state state-empty">
-          <svg viewBox="0 0 64 64" width="56" height="56" aria-hidden="true"><rect x="14" y="6" width="36" height="48" rx="4" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M22 20h20M22 28h20M22 36h12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
-          <h3>No PDF yet</h3>
-          <p>Press <strong>Compile</strong> to turn the LaTeX in the editor into a PDF. The starter document is ready to go — try it, then change the title to your own.</p>
+        <div id="warnbar" class="warnbar" hidden>
+          <button type="button" class="warnbar-toggle" id="warnbar-toggle" aria-expanded="false" aria-controls="warnbar-list">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.3 4.3 2.9 17.5A2 2 0 0 0 4.6 20.5h14.8a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0zM12 9.5v4M12 17h.01"/></svg>
+            <span id="warnbar-text"></span>
+            <span class="warnbar-chev" aria-hidden="true">Show</span>
+          </button>
+          <ol class="problems" id="warnbar-list" hidden></ol>
         </div>
 
-        <div id="loading" class="state state-loading" hidden>
+        <div id="empty" class="state">
+          <div class="empty-art" aria-hidden="true">
+            <svg viewBox="0 0 64 64"><rect x="15" y="8" width="34" height="46" rx="5"/><path d="M23 21h18M23 29h18M23 37h11"/></svg>
+          </div>
+          <h3>Your PDF will appear here</h3>
+          <ol class="steps">
+            <li><span>1</span>Edit the example, or upload your own <code>.tex</code> files from the menu.</li>
+            <li><span>2</span>Press <strong>Compile</strong> (or <kbd>Ctrl</kbd>+<kbd>Enter</kbd>).</li>
+            <li><span>3</span>Check the preview, then <strong>Download PDF</strong>.</li>
+          </ol>
+        </div>
+
+        <div id="loading" class="state" hidden>
           <span class="spinner spinner-lg" aria-hidden="true"></span>
           <h3>Compiling…</h3>
           <p>This usually takes a few seconds.</p>
         </div>
 
         <div id="error" class="state state-error" hidden tabindex="-1" aria-labelledby="error-title">
-          <h3 id="error-title">Compilation failed</h3>
-          <p id="error-reason" class="error-reason"></p>
-          <ol id="error-list" class="error-list"></ol>
-          <details id="log-details">
+          <div class="error-head">
+            <svg class="icon icon-lg" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5M12 16.5h.01"/></svg>
+            <div>
+              <h3 id="error-title">Compilation failed</h3>
+              <p id="error-reason"></p>
+            </div>
+          </div>
+          <ol class="problems" id="error-list"></ol>
+          <details id="log-details" class="log-details">
             <summary>Show full compiler log</summary>
             <pre id="log" class="log"></pre>
           </details>
         </div>
 
-        <iframe id="pdf" title="Compiled PDF preview" hidden></iframe>
+        <iframe id="pdf" title="PDF preview" hidden></iframe>
       </div>
-      <p class="panel-foot" id="backend-note">&nbsp;</p>
+      <p class="statusbar" id="backend-note">&nbsp;</p>
     </section>
-  </main>
+  </div>
 
-  <script src="app.js"></script>
+  <dialog id="dialog" class="dialog" aria-labelledby="dialog-title">
+    <form method="dialog" id="dialog-form">
+      <h2 id="dialog-title"></h2>
+      <p id="dialog-body"></p>
+      <label class="field" id="dialog-field" hidden>
+        <span id="dialog-label">File name</span>
+        <input id="dialog-input" type="text" autocomplete="off" spellcheck="false" aria-describedby="dialog-error">
+        <span class="field-error" id="dialog-error" role="alert"></span>
+      </label>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-quiet" id="dialog-cancel">Cancel</button>
+        <button type="button" class="btn btn-secondary" id="dialog-alt" hidden></button>
+        <button type="submit" class="btn btn-primary" id="dialog-ok">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script type="module" src="js/app.js"></script>
 </body>
 </html>
