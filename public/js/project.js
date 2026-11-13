@@ -53,7 +53,7 @@ export const STARTER_MAIN = 'main.tex';
 
 const TEXT_EXT = new Set([
   'tex', 'ltx', 'bib', 'bst', 'sty', 'cls', 'clo', 'cfg', 'def', 'dtx', 'ins', 'bbx', 'cbx', 'lbx',
-  'txt', 'md', 'csv', 'tsv', 'dat', 'tikz', 'pgf', 'bbl', 'json', 'xml', 'svg', 'lua', 'py', 'r', 'm', 'gnuplot',
+  'txt', 'md', 'csv', 'tsv', 'dat', 'tikz', 'pgf', 'bbl', 'json', 'xml', 'lua', 'py', 'r', 'm', 'gnuplot',
 ]);
 const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg']);
 const JUNK = /(^|\/)(\.[^/]*|__MACOSX|node_modules)(\/|$)|\.(aux|log|out|toc|lof|lot|fls|fdb_latexmk|synctex\.gz|synctex|blg|bcf|run\.xml|nav|snm|vrb|xdv|dvi)$/i;
@@ -169,8 +169,14 @@ export function fileSize(entry) {
 
 // ---------- pre-compile checks ----------
 
+// Remove comments, \verb|...| and verbatim blocks (keeping line breaks so line numbers stay right),
+// so example code like \verb|\cite{...}| is not mistaken for a real citation.
 function stripComments(text) {
-  return text.replace(/(^|[^\\])%.*$/gm, '$1');
+  const blank = (s) => s.replace(/[^\n]/g, ' ');
+  return text
+    .replace(/\\begin\{(verbatim\*?|lstlisting|minted|comment)\}[\s\S]*?\\end\{\1\}/g, blank)
+    .replace(/\\verb\*?([^a-zA-Z\s*])[^\n]*?\1/g, blank)
+    .replace(/(^|[^\\])%.*$/gm, '$1');
 }
 
 function lineOf(text, index) {
