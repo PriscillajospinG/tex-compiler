@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TeX Compiler</title>
+  <meta name="description" content="Write LaTeX, compile it, and preview the PDF.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232b59c3'/><text x='16' y='22' font-family='Georgia,serif' font-size='15' fill='white' text-anchor='middle'>TeX</text></svg>">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#editor">Skip to editor</a>
+
+  <header class="site-header">
+    <div class="wrap">
+      <h1>TeX Compiler</h1>
+      <p class="lead">Write or paste LaTeX into the editor, press <strong>Compile</strong>, and your PDF appears in the preview.
+        If something goes wrong, you'll see what happened and which line to check.</p>
+    </div>
+  </header>
+
+  <main class="wrap workspace">
+    <section class="panel panel-editor" aria-labelledby="editor-title">
+      <div class="panel-head">
+        <h2 id="editor-title" class="panel-title"><span class="badge badge-src" aria-hidden="true">.tex</span> LaTeX source</h2>
+        <div class="toolbar">
+          <label class="engine">
+            <span class="visually-hidden">TeX engine</span>
+            <select id="engine" title="TeX engine">
+              <option value="pdflatex">pdfLaTeX</option>
+              <option value="xelatex">XeLaTeX</option>
+              <option value="lualatex">LuaLaTeX</option>
+            </select>
+          </label>
+          <button type="button" id="reset" class="btn btn-ghost">Reset example</button>
+          <button type="button" id="compile" class="btn btn-primary" aria-describedby="shortcut">
+            <span class="spinner" aria-hidden="true"></span>
+            <span class="btn-label">Compile</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="editor" id="editor-frame">
+        <div class="gutter" id="gutter" aria-hidden="true"></div>
+        <textarea id="editor" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off"
+          wrap="off" aria-label="LaTeX source code" aria-describedby="shortcut"></textarea>
+      </div>
+      <p class="panel-foot" id="shortcut">
+        <span id="cursor-pos">Line 1, column 1</span>
+        <span class="sep" aria-hidden="true">·</span>
+        Press <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Enter</kbd> to compile. <kbd>Tab</kbd> moves to the next control.
+      </p>
+    </section>
+
+    <section class="panel panel-preview" aria-labelledby="preview-title">
+      <div class="panel-head">
+        <h2 id="preview-title" class="panel-title"><span class="badge badge-pdf" aria-hidden="true">PDF</span> Preview</h2>
+        <div class="toolbar">
+          <a id="open" class="btn btn-ghost" href="#" target="_blank" rel="noopener" hidden>Open in new tab</a>
+          <a id="download" class="btn btn-secondary" href="#" download="document.pdf" aria-disabled="true" tabindex="-1">Download PDF</a>
+        </div>
+      </div>
+
+      <div class="preview" id="preview">
+        <div id="status" class="status" role="status" aria-live="polite"></div>
+
+        <div id="empty" class="state state-empty">
+          <svg viewBox="0 0 64 64" width="56" height="56" aria-hidden="true"><rect x="14" y="6" width="36" height="48" rx="4" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M22 20h20M22 28h20M22 36h12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+          <h3>No PDF yet</h3>
+          <p>Press <strong>Compile</strong> to turn the LaTeX in the editor into a PDF. The starter document is ready to go — try it, then change the title to your own.</p>
+        </div>
+
+        <div id="loading" class="state state-loading" hidden>
+          <span class="spinner spinner-lg" aria-hidden="true"></span>
+          <h3>Compiling…</h3>
+          <p>This usually takes a few seconds.</p>
+        </div>
+
+        <div id="error" class="state state-error" hidden tabindex="-1" aria-labelledby="error-title">
+          <h3 id="error-title">Compilation failed</h3>
+          <p id="error-reason" class="error-reason"></p>
+          <ol id="error-list" class="error-list"></ol>
+          <details id="log-details">
+            <summary>Show full compiler log</summary>
+            <pre id="log" class="log"></pre>
+          </details>
+        </div>
+
+        <iframe id="pdf" title="Compiled PDF preview" hidden></iframe>
+      </div>
+      <p class="panel-foot" id="backend-note">&nbsp;</p>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
