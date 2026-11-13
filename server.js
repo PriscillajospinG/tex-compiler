@@ -5,10 +5,11 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { compile, describeBackend, config, ENGINES } = require('./lib/compile');
 const { parseLog } = require('./lib/parse-log');
+const { normalizeProject, ProjectError } = require('./lib/project');
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
-const MAX_SOURCE_BYTES = 512 * 1024;
+const MAX_BODY_BYTES = 40 * 1024 * 1024; // 25 MB of files, base64-encoded
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 const TYPES = {
@@ -42,20 +43,25 @@ function readBody(req, limit) {
 async function handleCompile(req, res) {
   let payload;
   try {
-    payload = JSON.parse(await readBody(req, MAX_SOURCE_BYTES + 1024));
+    payload = JSON.parse(await readBody(req, MAX_BODY_BYTES));
   } catch (err) {
-    if (err.status === 413) return sendJson(res, 413, { ok: false, reason: 'The document is too large (limit 512 KB).' });
-    return sendJson(res, 400, { ok: false, reason: 'The request was not valid JSON.' });
+    if (err.status === 413) return sendJson(res, 413, { ok: false, reason: 'The project is too large (limit 25 MB).', errors: [] });
+    return sendJson(res, 400, { ok: false, reason: 'The request was not valid JSON.', errors: [] });
   }
 
-  const source = typeof payload.source === 'string' ? payload.source : '';
+  let project;
+  try {
+    project = normalizeProject(payload || {});
+  } catch (err) {
+    if (err instanceof ProjectError) return sendJson(res, 400, { ok: false, reason: err.message, errors: [] });
+    throw err;
+  }
   const engine = ENGINES.includes(payload.engine) ? payload.engine : 'pdflatex';
-  if (!source.trim()) return sendJson(res, 400, { ok: false, reason: 'The editor is empty. Write some LaTeX first.' });
 
   const started = Date.now();
   let result;
   try {
-    result = await compile(source, engine);
+    result = await compile(project, engine);
   } catch (err) {
     console.error(err);
     return sendJson(res, 500, { ok: false, reason: 'The server hit an unexpected problem while compiling.' });
@@ -73,13 +79,16 @@ async function handleCompile(req, res) {
     return res.end(result.pdf);
   }
 
-  const errors = parseLog(result.log, source);
+  const textFiles = Object.fromEntries(project.files.filter((f) => f.text !== null).map((f) => [f.path, f.text]));
+  const prefix = project.main.includes('/') ? project.main.slice(0, project.main.lastIndexOf('/') + 1) : '';
+  const errors = parseLog(result.log, { main: project.main, files: textFiles })
+    .map((e) => (e.file && prefix && !textFiles[e.file] && textFiles[prefix + e.file] ? { ...e, file: prefix + e.file } : e));
   // 422: the LaTeX itself has a problem. 502: the compiler could not be reached.
   sendJson(res, result.unavailable ? 502 : 422, {
     ok: false,
     backend: result.backend,
     ms,
-    reason: result.reason || (errors.length ? null : 'Compilation failed, but TeX did not report a specific error. See the log below.'),
+    reason: result.reason || (errors.length ? null : 'Compilation failed, but the compiler did not report a specific error. See the full log below.'),
     errors,
     log: result.log ? result.log.slice(-20000) : '',
   });
