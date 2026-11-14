@@ -284,6 +284,33 @@
         </ul>
         <p>For large or private documents, run this app on your own computer with TeX installed. It's free, fast and has no size limits.</p>
       </div>
+
+      <section class="install" aria-labelledby="install-title">
+        <h3 id="install-title">1. Install TeX</h3>
+        <div class="seg" role="tablist" aria-label="Your operating system">
+          <button type="button" role="tab" class="seg-btn" id="os-tab-mac" aria-controls="os-mac" data-os="mac">macOS</button>
+          <button type="button" role="tab" class="seg-btn" id="os-tab-win" aria-controls="os-win" data-os="win">Windows</button>
+          <button type="button" role="tab" class="seg-btn" id="os-tab-linux" aria-controls="os-linux" data-os="linux">Linux</button>
+        </div>
+        <div class="os-panel" role="tabpanel" id="os-mac" aria-labelledby="os-tab-mac">
+          <div class="cmd"><code>brew install --cask mactex-no-gui</code><button type="button" class="cmd-copy">Copy</button></div>
+          <p class="cmd-note">Needs <a href="https://brew.sh" target="_blank" rel="noopener">Homebrew</a>. Or download the installer from <a href="https://www.tug.org/mactex/" target="_blank" rel="noopener">tug.org/mactex</a>.</p>
+        </div>
+        <div class="os-panel" role="tabpanel" id="os-win" aria-labelledby="os-tab-win" hidden>
+          <div class="cmd"><code>winget install MiKTeX.MiKTeX</code><button type="button" class="cmd-copy">Copy</button></div>
+          <p class="cmd-note">Run in PowerShell. Or download the installer from <a href="https://miktex.org/download" target="_blank" rel="noopener">miktex.org/download</a>.</p>
+        </div>
+        <div class="os-panel" role="tabpanel" id="os-linux" aria-labelledby="os-tab-linux" hidden>
+          <div class="cmd"><code>sudo apt install texlive-latex-extra texlive-bibtex-extra texlive-publishers biber</code><button type="button" class="cmd-copy">Copy</button></div>
+          <p class="cmd-note">For Ubuntu / Debian. On Fedora: <code>sudo dnf install texlive-scheme-medium biber</code></p>
+        </div>
+
+        <h3>2. Run this app on your computer</h3>
+        <div class="cmd cmd-multi"><code>git clone https://github.com/PriscillajospinG/tex-compiler.git
+cd tex-compiler
+npm start</code><button type="button" class="cmd-copy">Copy</button></div>
+        <p class="cmd-note">Needs <a href="https://nodejs.org" target="_blank" rel="noopener">Node.js</a> 18+. Then open <strong>http://localhost:3000</strong>.</p>
+      </section>
       <label class="notice-check">
         <input type="checkbox" id="notice-dismiss">
         <span>Don’t show this again</span>

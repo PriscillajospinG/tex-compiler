@@ -920,6 +920,46 @@ pdf = new PdfViewer(views.pdf, { pageLabel: els.pageLabel, zoomLabel: els.zoomLa
 
 // First-visit notice: only when this deployment compiles with the online service (no TeX on the server).
 const NOTICE_KEY = 'tex-compiler:notice-dismissed';
+// OS tabs and copy buttons inside the notice.
+function initInstallHelp() {
+  const tabs = [...document.querySelectorAll('#notice .seg-btn')];
+  const select = (os, focus = false) => {
+    for (const t of tabs) {
+      const on = t.dataset.os === os;
+      t.setAttribute('aria-selected', String(on));
+      t.tabIndex = on ? 0 : -1;
+      $(t.getAttribute('aria-controls')).hidden = !on;
+      if (on && focus) t.focus();
+    }
+  };
+  const ua = `${navigator.userAgentData?.platform || ''} ${navigator.platform || ''} ${navigator.userAgent}`;
+  select(/Win/i.test(ua) ? 'win' : /Linux|X11|CrOS/i.test(ua) && !/Android/i.test(ua) ? 'linux' : 'mac');
+  tabs.forEach((t, i) => {
+    t.addEventListener('click', () => select(t.dataset.os));
+    t.addEventListener('keydown', (e) => {
+      const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+      if (step) { e.preventDefault(); select(tabs[(i + step + tabs.length) % tabs.length].dataset.os, true); }
+    });
+  });
+  for (const btn of document.querySelectorAll('#notice .cmd-copy')) {
+    btn.addEventListener('click', async () => {
+      const text = btn.parentElement.querySelector('code').textContent;
+      try {
+        await navigator.clipboard.writeText(text);
+        btn.textContent = 'Copied';
+      } catch {
+        const range = document.createRange();
+        range.selectNodeContents(btn.parentElement.querySelector('code'));
+        getSelection().removeAllRanges();
+        getSelection().addRange(range);
+        btn.textContent = 'Press Ctrl+C';
+      }
+      btn.classList.add('is-copied');
+      setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('is-copied'); }, 1800);
+    });
+  }
+}
+
 async function showNoticeIfRemote() {
   if (store.get(NOTICE_KEY) === '1') return;
   let backend = null;
@@ -929,6 +969,7 @@ async function showNoticeIfRemote() {
   } catch { return; }
   if (backend !== 'remote') return;
   const dialog = $('notice');
+  initInstallHelp();
   dialog.addEventListener('close', () => {
     if ($('notice-dismiss').checked) store.set(NOTICE_KEY, '1');
     editor.focus();
