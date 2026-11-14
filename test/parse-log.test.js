@@ -107,3 +107,16 @@ test('BibTeX syntax error in a .bib file', () => {
 test('empty log gives no errors', () => {
   assert.deepEqual(parseLog(''), []);
 });
+
+test('wrapped "Fatal error" follow-up lines are not reported as extra errors', () => {
+  const log = [
+    './main.tex:17: Undefined control sequence.',
+    'l.17 \\badcmd',
+    '             Inline math',
+    './main.tex:17:  ==> Fatal error occurred, no output PDF file produ',
+    'ced!',
+  ].join('\n');
+  const errors = parseLog(log, { main: 'main.tex' });
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].message, 'Undefined control sequence.');
+});
