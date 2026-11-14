@@ -4,51 +4,87 @@ import {
   readFiles, stripCommonRoot, filesFromDrop, toBase64, formatBytes, fileSize, checkProject,
 } from './project.js';
 import { loadProject, saveProject } from './store.js';
+import { CodeEditor } from './editor.js';
+import { PdfViewer } from './pdfview.js';
 
-// ---------- DOM ----------
+// =========================================================
+// DOM
+// =========================================================
 const $ = (id) => document.getElementById(id);
 const els = {
-  engine: $('engine'), compile: $('compile'), compileKbd: $('compile-kbd'), auto: $('auto-compile'),
+  layout: $('layout'), sidebar: $('sidebar'), toggleSidebar: $('toggle-sidebar'), splitter: $('splitter'),
+  engine: $('engine'), compile: $('compile'), compileKbd: $('compile-kbd'), auto: $('auto-compile'), progress: $('progress'),
   newFile: $('new-file'), uploadFiles: $('upload-files'), uploadFolder: $('upload-folder'), reset: $('reset'),
   fileInput: $('file-input'), folderInput: $('folder-input'),
   dropzone: $('dropzone'), tree: $('tree'), fileCount: $('file-count'),
-  activeIcon: $('active-icon'), activePath: $('active-path'), activeMain: $('active-main'),
+  activeIcon: $('active-icon'), activeDir: $('active-dir'), activeName: $('active-name'), activeMain: $('active-main'),
   setMain: $('set-main'), rename: $('rename'), del: $('delete'),
-  editorFrame: $('editor-frame'), editor: $('editor'), gutter: $('gutter'), viewer: $('viewer'),
+  code: $('code'), textarea: $('editor'), viewer: $('viewer'),
   cursorPos: $('cursor-pos'), saveState: $('save-state'),
   pill: $('pill'), open: $('open'), download: $('download'),
-  status: $('status'), backendNote: $('backend-note'), previewPane: $('preview-pane'),
+  pdfTools: $('pdf-tools'), pageLabel: $('page-label'), zoomIn: $('zoom-in'), zoomOut: $('zoom-out'), zoomLabel: $('zoom-label'),
+  status: $('status'), backendNote: $('backend-note'),
   warnbar: $('warnbar'), warnbarToggle: $('warnbar-toggle'), warnbarText: $('warnbar-text'), warnbarList: $('warnbar-list'),
   errorReason: $('error-reason'), errorList: $('error-list'), logDetails: $('log-details'), log: $('log'),
+  pdfFrame: $('pdf-frame'), tabs: [...document.querySelectorAll('.tab')], tabDot: $('tab-dot'),
   dialog: $('dialog'), toast: $('toast'),
 };
-const views = { empty: $('empty'), loading: $('loading'), error: $('error'), pdf: $('pdf') };
+const views = { empty: $('empty'), loading: $('loading'), error: $('error'), pdf: $('pdf'), frame: $('pdf-frame') };
+const mobile = matchMedia('(max-width: 900px)');
 
-// ---------- State ----------
+// =========================================================
+// State
+// =========================================================
 const state = {
   files: new Map(), // path -> { text } | { blob }
   main: null,
   active: null,
   errorLines: new Map(), // path -> Set<line>
+  collapsed: new Set(), // collapsed folder paths
   version: 0,
   compiledVersion: -1,
   attemptedVersion: -1,
   compiling: false,
   pdfUrl: null,
   viewerUrl: null,
+  hasPdf: false,
 };
 
-// ---------- Icons ----------
+const editor = new CodeEditor(els.code, {
+  onInput: (text) => {
+    const f = state.files.get(state.active);
+    if (!f || typeof f.text !== 'string') return;
+    f.text = text;
+    if (state.errorLines.has(state.active)) {
+      state.errorLines.delete(state.active);
+      editor.setErrorLines([]);
+      renderTree();
+    }
+    changed();
+  },
+  onCursor: ({ line, col, selected }) => {
+    els.cursorPos.textContent = selected ? `Ln ${line}, Col ${col} (${selected} selected)` : `Ln ${line}, Col ${col}`;
+  },
+});
+
+let pdf = null; // created once pdf.js has loaded
+
+// =========================================================
+// Small helpers
+// =========================================================
 const ICONS = {
-  tex: '<path d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>',
-  bib: '<path d="M5 19V5.5A2.5 2.5 0 0 1 7.5 3H19v15H7.5A2.5 2.5 0 0 0 5 20.5 1.5 1.5 0 0 0 6.5 21H19"/><path d="M9 7.5h6"/>',
-  image: '<rect x="3.5" y="3.5" width="17" height="17" rx="2"/><circle cx="9" cy="9" r="1.8"/><path d="m20.5 15-4.5-4.5L6 20.5"/>',
-  style: '<path d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V8z"/><path d="M14 3v5h5M10 12l-2 2.5 2 2.5M14 12l2 2.5-2 2.5"/>',
-  file: '<path d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V8z"/><path d="M14 3v5h5"/>',
-  folder: '<path d="M3.5 18.5v-12A1.5 1.5 0 0 1 5 5h4.2l2 2.5H19a1.5 1.5 0 0 1 1.5 1.5v9.5A1.5 1.5 0 0 1 19 20H5a1.5 1.5 0 0 1-1.5-1.5z"/>',
+  tex: '<path d="M13.5 3.5H7A1.5 1.5 0 0 0 5.5 5v14A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5V8.5z"/><path d="M13.5 3.5v5h5M9 13h6M9 16.5h4"/>',
+  bib: '<path d="M5.5 18.5V6a2.5 2.5 0 0 1 2.5-2.5h10.5v14H8a2.5 2.5 0 0 0-2.5 2.5v0A1.5 1.5 0 0 0 7 21.5h11.5"/><path d="M9.5 7.5h5"/>',
+  image: '<rect x="4" y="4" width="16" height="16" rx="2.5"/><circle cx="9.5" cy="9.5" r="1.6"/><path d="m20 15-4.2-4.2L6 20"/>',
+  style: '<path d="M13.5 3.5H7A1.5 1.5 0 0 0 5.5 5v14A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5V8.5z"/><path d="M13.5 3.5v5h5M10.5 12.5l-2 2 2 2M13.5 12.5l2 2-2 2"/>',
+  file: '<path d="M13.5 3.5H7A1.5 1.5 0 0 0 5.5 5v14A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5V8.5z"/><path d="M13.5 3.5v5h5"/>',
+  folder: '<path d="M3.5 17.5v-11a2 2 0 0 1 2-2h3.7l2 2.5h7.3a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>',
+  chev: '<path d="m7 9.5 5 5 5-5"/>',
+  arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
 };
 const svg = (name, cls = 'icon') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`;
 const fileIcon = (path) => `<span class="file-icon k-${kindOf(path)}">${svg(kindOf(path))}</span>`;
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 function h(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -64,18 +100,30 @@ function h(tag, attrs = {}, ...children) {
   return node;
 }
 
-// ---------- Toast & dialog ----------
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+const store = {
+  get(key) { try { return localStorage.getItem(key); } catch { return null; } },
+  set(key, value) { try { localStorage.setItem(key, value); } catch { /* ignore */ } },
+};
+
+// =========================================================
+// Toast & dialog
+// =========================================================
 let toastTimer;
 function toast(message) {
   els.toast.textContent = message;
   els.toast.hidden = false;
+  els.toast.style.animation = 'none';
+  void els.toast.offsetWidth; // restart the entrance animation
+  els.toast.style.animation = '';
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { els.toast.hidden = true; }, 3800);
+  toastTimer = setTimeout(() => { els.toast.hidden = true; }, 4000);
 }
 
-/**
- * Small modal dialog. Resolves to { action: 'ok' | 'alt', value } or null when cancelled.
- */
+/** Modal dialog. Resolves to { action: 'ok' | 'alt', value } or null when cancelled. */
 function ask({ title, body = '', input = null, ok = 'OK', alt = null, danger = false, validate = null }) {
   const d = els.dialog;
   const field = $('dialog-field');
@@ -84,6 +132,7 @@ function ask({ title, body = '', input = null, ok = 'OK', alt = null, danger = f
   const okBtn = $('dialog-ok');
   const altBtn = $('dialog-alt');
   const cancelBtn = $('dialog-cancel');
+  const form = $('dialog-form');
 
   $('dialog-title').textContent = title;
   $('dialog-body').textContent = body;
@@ -101,22 +150,16 @@ function ask({ title, body = '', input = null, ok = 'OK', alt = null, danger = f
   altBtn.textContent = alt || '';
 
   return new Promise((resolve) => {
-    const finish = (result) => {
-      cleanup();
-      d.close();
-      resolve(result);
-    };
+    const finish = (result) => { cleanup(); d.close(); resolve(result); };
     const onSubmit = (e) => {
       e.preventDefault();
       const value = input ? inputEl.value.trim() : null;
-      if (validate) {
-        const msg = validate(value);
-        if (msg) {
-          err.textContent = msg;
-          inputEl.setAttribute('aria-invalid', 'true');
-          inputEl.focus();
-          return;
-        }
+      const msg = validate && validate(value);
+      if (msg) {
+        err.textContent = msg;
+        inputEl.setAttribute('aria-invalid', 'true');
+        inputEl.focus();
+        return;
       }
       finish({ action: 'ok', value });
     };
@@ -125,13 +168,13 @@ function ask({ title, body = '', input = null, ok = 'OK', alt = null, danger = f
     const onEsc = (e) => { e.preventDefault(); finish(null); };
     const onInput = () => { err.textContent = ''; inputEl.removeAttribute('aria-invalid'); };
     function cleanup() {
-      $('dialog-form').removeEventListener('submit', onSubmit);
+      form.removeEventListener('submit', onSubmit);
       altBtn.removeEventListener('click', onAlt);
       cancelBtn.removeEventListener('click', onCancel);
       d.removeEventListener('cancel', onEsc);
       inputEl.removeEventListener('input', onInput);
     }
-    $('dialog-form').addEventListener('submit', onSubmit);
+    form.addEventListener('submit', onSubmit);
     altBtn.addEventListener('click', onAlt);
     cancelBtn.addEventListener('click', onCancel);
     d.addEventListener('cancel', onEsc);
@@ -149,7 +192,9 @@ function ask({ title, body = '', input = null, ok = 'OK', alt = null, danger = f
   });
 }
 
-// ---------- Persistence ----------
+// =========================================================
+// Persistence
+// =========================================================
 let saveTimer;
 function changed({ content = true } = {}) {
   if (content) {
@@ -158,6 +203,7 @@ function changed({ content = true } = {}) {
     scheduleAutoCompile();
   }
   els.saveState.textContent = 'Saving…';
+  els.saveState.className = 'save-state is-saving';
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
     const ok = await saveProject({
@@ -166,18 +212,24 @@ function changed({ content = true } = {}) {
       active: state.active,
       engine: els.engine.value,
     });
-    els.saveState.textContent = ok ? 'Saved in this browser' : 'Not saved (browser storage unavailable)';
+    els.saveState.textContent = ok ? 'Saved' : 'Not saved';
+    els.saveState.className = `save-state${ok ? '' : ' is-error'}`;
+    els.saveState.title = ok ? 'Your project is saved in this browser.' : 'Browser storage is unavailable, so changes will be lost on reload.';
   }, 400);
 }
 
-// ---------- File tree ----------
+// =========================================================
+// File tree
+// =========================================================
 function buildTree(paths) {
   const root = { folders: new Map(), files: [] };
   for (const p of paths) {
     const parts = p.split('/');
     let node = root;
+    let prefix = '';
     for (const part of parts.slice(0, -1)) {
-      if (!node.folders.has(part)) node.folders.set(part, { folders: new Map(), files: [] });
+      prefix = prefix ? `${prefix}/${part}` : part;
+      if (!node.folders.has(part)) node.folders.set(part, { path: prefix, folders: new Map(), files: [] });
       node = node.folders.get(part);
     }
     node.files.push(p);
@@ -188,26 +240,31 @@ function buildTree(paths) {
 function renderTree() {
   const paths = [...state.files.keys()].sort((a, b) => a.localeCompare(b));
   const total = paths.reduce((n, p) => n + fileSize(state.files.get(p)), 0);
-  els.fileCount.textContent = `${paths.length} file${paths.length === 1 ? '' : 's'} · ${formatBytes(total)}`;
+  els.fileCount.textContent = paths.length ? `${paths.length} · ${formatBytes(total)}` : '';
 
   const renderNode = (node, depth) => {
     const items = [];
     for (const [name, child] of [...node.folders].sort(([a], [b]) => a.localeCompare(b))) {
-      items.push(h('li', {},
-        h('div', { class: 'tree-folder', style: `--depth:${depth}`, html: `${svg('folder')}<span>${escapeHtml(name)}</span>` }),
-        h('ul', { role: 'list' }, renderNode(child, depth + 1))));
+      const open = !state.collapsed.has(child.path);
+      const row = h('button', {
+        type: 'button', class: 'tree-row tree-folder', style: `--depth:${depth}`, 'aria-expanded': String(open),
+        onclick: () => {
+          if (open) state.collapsed.add(child.path); else state.collapsed.delete(child.path);
+          renderTree();
+        },
+        html: `${svg('chev', 'icon chev')}${svg('folder')}<span class="name">${escapeHtml(name)}</span>`,
+      });
+      items.push(h('li', {}, row, open ? h('ul', { role: 'list' }, renderNode(child, depth + 1)) : null));
     }
     for (const path of node.files) {
-      const hasErr = state.errorLines.has(path);
       const btn = h('button', {
-        type: 'button', class: 'tree-file', style: `--depth:${depth}`,
-        'aria-current': path === state.active ? 'true' : 'false',
-        title: path,
-        onclick: () => openFile(path),
+        type: 'button', class: 'tree-row tree-file', style: `--depth:${depth}`,
+        'aria-current': path === state.active ? 'true' : 'false', title: path,
+        onclick: () => { openFile(path); if (mobile.matches) setView('editor'); },
+        html: `${fileIcon(path)}<span class="name">${escapeHtml(basename(path))}</span>`,
       });
-      btn.innerHTML = `${fileIcon(path)}<span class="name">${escapeHtml(basename(path))}</span>`;
-      if (path === state.main) btn.append(h('span', { class: 'tag tag-main' }, 'main'));
-      if (hasErr) btn.append(h('span', { class: 'dot', title: 'Has errors' }), h('span', { class: 'visually-hidden' }, ' (has errors)'));
+      if (path === state.main) btn.append(h('span', { class: 'badge badge-main' }, 'main'));
+      if (state.errorLines.has(path)) btn.append(h('span', { class: 'err-dot', title: 'Has errors' }), h('span', { class: 'visually-hidden' }, ' (has errors)'));
       items.push(h('li', {}, btn));
     }
     return items;
@@ -215,40 +272,19 @@ function renderTree() {
 
   els.tree.replaceChildren(...(paths.length
     ? renderNode(buildTree(paths), 0)
-    : [h('li', { class: 'tree-empty' }, 'No files yet. Create or upload one.')]));
+    : [h('li', { class: 'tree-empty' }, 'No files yet — create or upload one.')]));
 }
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-
-// ---------- Editor ----------
-function lineHeight() {
-  return parseFloat(getComputedStyle(els.editor).lineHeight) || 21;
-}
-
-function renderGutter() {
-  const count = els.editor.value.split('\n').length;
-  const errs = state.errorLines.get(state.active) || new Set();
-  let html = '';
-  for (let i = 1; i <= count; i++) html += `<div${errs.has(i) ? ' class="err"' : ''}>${i}</div>`;
-  els.gutter.innerHTML = html;
-  els.gutter.scrollTop = els.editor.scrollTop;
-}
-
-function updateCursor() {
-  const before = els.editor.value.slice(0, els.editor.selectionStart);
-  const line = before.split('\n').length;
-  const col = before.length - before.lastIndexOf('\n');
-  els.cursorPos.textContent = `Ln ${line}, Col ${col}`;
-}
-
+// =========================================================
+// Editor / active file
+// =========================================================
 function renderActive() {
   const path = state.active;
   const file = path && state.files.get(path);
   if (state.viewerUrl) { URL.revokeObjectURL(state.viewerUrl); state.viewerUrl = null; }
 
-  els.activePath.textContent = path || 'No file selected';
+  els.activeDir.textContent = path && path.includes('/') ? `${dirname(path)}/` : '';
+  els.activeName.textContent = path ? basename(path) : 'No file open';
   els.activeIcon.innerHTML = path ? fileIcon(path) : '';
   els.activeMain.hidden = !path || path !== state.main;
   els.setMain.hidden = !path || !isTex(path) || path === state.main;
@@ -256,35 +292,39 @@ function renderActive() {
   els.del.hidden = !path;
 
   if (file && typeof file.text === 'string') {
-    els.editorFrame.hidden = false;
+    els.code.hidden = false;
     els.viewer.hidden = true;
-    els.editor.value = file.text;
-    els.editor.setAttribute('aria-label', `Editing ${path}`);
-    els.editor.scrollTop = 0;
-    els.editor.setSelectionRange(0, 0);
-    renderGutter();
-    updateCursor();
+    els.textarea.setAttribute('aria-label', `Editing ${path}`);
+    editor.errorLines = new Set(state.errorLines.get(path) || []);
+    editor.setValue(file.text, path);
     return;
   }
 
-  els.editorFrame.hidden = true;
+  els.code.hidden = true;
   els.viewer.hidden = false;
   els.viewer.replaceChildren();
   if (!file) {
-    els.viewer.append(h('h3', {}, 'No file selected'), h('p', {}, 'Choose a file in the sidebar, or create a new one.'));
+    els.viewer.append(h('h3', {}, 'No file open'), h('p', {}, 'Choose a file from the sidebar, or create a new one.'));
     return;
   }
-  const rel = relativeToMain(path);
   if (isImage(path)) {
     state.viewerUrl = URL.createObjectURL(file.blob);
     els.viewer.append(h('img', { src: state.viewerUrl, alt: `Preview of ${basename(path)}` }));
   }
+  const isPicture = kindOf(path) === 'image';
   els.viewer.append(
     h('h3', {}, basename(path)),
-    h('p', {}, `${kindOf(path) === 'image' ? 'Image' : 'Binary file'} · ${formatBytes(file.blob.size)} · can't be edited here.`),
+    h('p', {}, `${isPicture ? 'Image' : 'Binary file'} · ${formatBytes(file.blob.size)}`),
   );
-  if (kindOf(path) === 'image') {
-    els.viewer.append(h('p', {}, 'Use it in your document with:'), h('code', {}, `\\includegraphics[width=\\linewidth]{${rel}}`));
+  if (isPicture) {
+    const snippet = `\\includegraphics[width=\\linewidth]{${relativeToMain(path)}}`;
+    const copy = h('button', {
+      type: 'button', class: 'btn btn-ghost btn-sm',
+      onclick: async () => {
+        try { await navigator.clipboard.writeText(snippet); toast('Copied to clipboard.'); } catch { toast('Copy failed — select the text instead.'); }
+      },
+    }, 'Copy');
+    els.viewer.append(h('p', {}, 'Use it in your document with:'), h('div', { class: 'snippet' }, h('code', {}, snippet), copy));
   }
 }
 
@@ -297,33 +337,28 @@ function openFile(path, line) {
   if (!state.files.has(path)) return;
   if (state.active !== path) {
     state.active = path;
+    // Make sure the file's folders are expanded.
+    const parts = path.split('/');
+    for (let i = 1; i < parts.length; i++) state.collapsed.delete(parts.slice(0, i).join('/'));
     renderActive();
     renderTree();
     changed({ content: false });
   }
-  if (line) goToLine(line);
+  if (line && !els.code.hidden) {
+    if (mobile.matches) setView('editor');
+    editor.goToLine(line);
+  }
 }
 
-function goToLine(n) {
-  if (els.editorFrame.hidden) return;
-  const lines = els.editor.value.split('\n');
-  const line = Math.min(Math.max(1, n), lines.length);
-  let start = 0;
-  for (let i = 0; i < line - 1; i++) start += lines[i].length + 1;
-  els.editor.focus();
-  els.editor.setSelectionRange(start, start + lines[line - 1].length);
-  els.editor.scrollTop = Math.max(0, (line - 1) * lineHeight() - els.editor.clientHeight / 3);
-  els.gutter.scrollTop = els.editor.scrollTop;
-  updateCursor();
-  if (matchMedia('(max-width: 960px)').matches) els.editorFrame.scrollIntoView({ behavior: 'smooth', block: 'center' });
-}
-
-// ---------- Project operations ----------
+// =========================================================
+// Project operations
+// =========================================================
 function setProject(entries, main) {
   state.files = new Map(entries.map((e) => [e.path, e.blob ? { blob: e.blob } : { text: e.text ?? '' }]));
   state.main = main && state.files.has(main) ? main : detectMain(state.files);
   state.active = state.main || [...state.files.keys()][0] || null;
   state.errorLines = new Map();
+  state.collapsed = new Set();
   renderTree();
   renderActive();
 }
@@ -336,7 +371,7 @@ function isUntouchedStarter() {
 async function addEntries(entries, { folderName = null } = {}) {
   const { added, skipped } = await readFiles(entries);
   if (!added.length) {
-    toast(skipped.length ? `Nothing added: ${skipped.length} file(s) skipped (${skipped[0].why}).` : 'No files to add.');
+    toast(skipped.length ? `Nothing added — ${plural(skipped.length, 'file')} skipped (${skipped[0].why}).` : 'No files to add.');
     return;
   }
   const incomingBytes = added.reduce((n, e) => n + fileSize(e), 0);
@@ -344,8 +379,8 @@ async function addEntries(entries, { folderName = null } = {}) {
   let replace = false;
   if (folderName && state.files.size && !isUntouchedStarter()) {
     const choice = await ask({
-      title: `Open folder "${folderName}"?`,
-      body: `It has ${added.length} file${added.length === 1 ? '' : 's'}. You can replace your current project, or add the files to it.`,
+      title: `Open “${folderName}”?`,
+      body: `This folder has ${plural(added.length, 'file')}. Replace your current project with it, or add the files to what you have.`,
       ok: 'Replace project', alt: 'Add to project',
     });
     if (!choice) return;
@@ -356,54 +391,54 @@ async function addEntries(entries, { folderName = null } = {}) {
 
   const currentBytes = replace ? 0 : [...state.files.values()].reduce((n, f) => n + fileSize(f), 0);
   if (currentBytes + incomingBytes > MAX_PROJECT_BYTES) {
-    toast(`That would make the project larger than ${formatBytes(MAX_PROJECT_BYTES)}. Nothing was added.`);
+    toast(`That would make the project larger than ${formatBytes(MAX_PROJECT_BYTES)}, so nothing was added.`);
     return;
   }
 
+  let replaced = 0;
   if (replace) {
     setProject(added, null);
+    clearResult();
   } else {
-    let replaced = 0;
     for (const e of added) {
       if (state.files.has(e.path)) replaced++;
       state.files.set(e.path, e.blob ? { blob: e.blob } : { text: e.text });
     }
     if (!state.main || !state.files.has(state.main)) state.main = detectMain(state.files);
-    const firstText = added.find((e) => isTex(e.path)) || added[0];
-    state.active = firstText.path;
+    state.active = (added.find((e) => isTex(e.path)) || added[0]).path;
     renderTree();
     renderActive();
-    if (replaced) toast(`Replaced ${replaced} existing file${replaced === 1 ? '' : 's'}.`);
   }
   changed();
-  const note = skipped.length ? ` Skipped ${skipped.length} build/hidden file${skipped.length === 1 ? '' : 's'}.` : '';
-  announce(`Added ${added.length} file${added.length === 1 ? '' : 's'}.${note}`);
-  if (note || !replace) toast(`Added ${added.length} file${added.length === 1 ? '' : 's'}.${note}`);
-  else toast(`Opened "${folderName}" · main file: ${state.main || 'none found'}`);
+
+  const skippedNote = skipped.length ? ` ${plural(skipped.length, 'build/hidden file')} skipped.` : '';
+  if (replace) toast(`Opened “${folderName}” · main file: ${state.main || 'none found'}.${skippedNote}`);
+  else toast(`Added ${plural(added.length, 'file')}${replaced ? ` (${replaced} replaced)` : ''}.${skippedNote}`);
 }
 
 async function newFile() {
   const suggested = state.files.has('chapter.tex') ? 'chapters/section.tex' : 'chapter.tex';
   const res = await ask({
     title: 'New file',
-    body: 'Use a folder in the name to create one, e.g. chapters/intro.tex.',
+    body: 'Include a folder in the name to create one — for example chapters/intro.tex.',
     input: { label: 'File name', value: suggested, placeholder: 'chapters/intro.tex' },
-    ok: 'Create',
+    ok: 'Create file',
     validate: (v) => validatePath(v)
       || (state.files.has(v) ? 'A file with this name already exists.' : null)
       || (!isText(v) ? 'Only text files (.tex, .bib, .sty, …) can be created here. Upload images instead.' : null),
   });
   if (!res) return;
-  state.files.set(res.value, { text: isTex(res.value) && !state.main ? '\\documentclass{article}\n\\begin{document}\n\n\\end{document}\n' : '' });
+  const starter = isTex(res.value) && !state.main ? '\\documentclass{article}\n\\begin{document}\n\n\\end{document}\n' : '';
+  state.files.set(res.value, { text: starter });
   if (!state.main && isTex(res.value)) state.main = res.value;
   state.active = res.value;
   renderTree();
   renderActive();
   changed();
-  els.editor.focus();
+  if (mobile.matches) setView('editor');
+  editor.focus();
   if (isTex(res.value) && res.value !== state.main) {
-    const rel = relativeToMain(res.value).replace(/\.tex$/, '');
-    toast(`Created ${res.value}. Include it from ${basename(state.main)} with \\input{${rel}}.`);
+    toast(`Created ${res.value}. Include it from ${basename(state.main)} with \\input{${relativeToMain(res.value).replace(/\.tex$/, '')}}.`);
   }
 }
 
@@ -417,9 +452,8 @@ async function renameActive() {
     validate: (v) => validatePath(v) || (v !== from && state.files.has(v) ? 'A file with this name already exists.' : null),
   });
   if (!res || res.value === from) return;
-  const entry = state.files.get(from);
   const next = new Map();
-  for (const [p, f] of state.files) next.set(p === from ? res.value : p, p === from ? entry : f);
+  for (const [p, f] of state.files) next.set(p === from ? res.value : p, f);
   state.files = next;
   if (state.main === from) state.main = isTex(res.value) ? res.value : detectMain(state.files);
   state.active = res.value;
@@ -434,7 +468,7 @@ async function deleteActive() {
   if (!path) return;
   const res = await ask({
     title: `Delete ${basename(path)}?`,
-    body: path === state.main ? 'This is your main file. Another .tex file will become the main file.' : 'This cannot be undone.',
+    body: path === state.main ? 'This is your main file. Another .tex file will become the main file.' : 'This can’t be undone.',
     ok: 'Delete', danger: true,
   });
   if (!res) return;
@@ -459,8 +493,8 @@ function setActiveAsMain() {
 async function resetProject() {
   if (!isUntouchedStarter()) {
     const res = await ask({
-      title: 'Reset to the example?',
-      body: 'This replaces all files in your project with the starter example. Your current files will be lost.',
+      title: 'Start over with the example?',
+      body: 'All files in your project will be replaced by the starter example. Your current files will be lost.',
       ok: 'Reset project', danger: true,
     });
     if (!res) return;
@@ -468,12 +502,16 @@ async function resetProject() {
   setProject(Object.entries(STARTER_FILES).map(([path, text]) => ({ path, text })), STARTER_MAIN);
   clearResult();
   changed();
-  els.editor.focus();
+  if (mobile.matches) setView('editor');
+  editor.focus();
 }
 
-// ---------- Preview ----------
+// =========================================================
+// Preview
+// =========================================================
 function show(view) {
   for (const [name, el] of Object.entries(views)) el.hidden = name !== view;
+  els.pdfTools.hidden = view !== 'pdf';
 }
 
 function announce(msg) { els.status.textContent = msg; }
@@ -486,40 +524,60 @@ function setPill(stateName, text) {
 let lastPill = { state: 'idle', text: 'Not compiled' };
 function updatePill() {
   if (state.compiling) return;
-  if (lastPill.state === 'ok' && state.version !== state.compiledVersion) setPill('stale', 'Edited since compile');
+  if (lastPill.state === 'ok' && state.version !== state.compiledVersion) setPill('stale', 'Edited');
   else setPill(lastPill.state, lastPill.text);
 }
 
-function setPdf(blob) {
+function pdfName() {
+  return `${basename(state.main || 'document.tex').replace(/\.[^.]+$/, '')}.pdf`;
+}
+
+async function showPdf(blob) {
   if (state.pdfUrl) URL.revokeObjectURL(state.pdfUrl);
-  state.pdfUrl = blob ? URL.createObjectURL(blob) : null;
-  const name = `${basename(state.main || 'document.tex').replace(/\.[^.]+$/, '')}.pdf`;
-  if (state.pdfUrl) {
-    views.pdf.src = state.pdfUrl;
-    els.download.href = state.pdfUrl;
-    els.download.download = name;
-    els.open.href = state.pdfUrl;
-    els.download.removeAttribute('aria-disabled');
-    els.download.removeAttribute('tabindex');
-    els.open.hidden = false;
-  } else {
-    views.pdf.removeAttribute('src');
-    els.download.href = '#';
-    els.download.setAttribute('aria-disabled', 'true');
-    els.download.setAttribute('tabindex', '-1');
-    els.open.hidden = true;
+  state.pdfUrl = URL.createObjectURL(blob);
+  els.download.href = state.pdfUrl;
+  els.download.download = pdfName();
+  els.open.href = state.pdfUrl;
+  els.download.removeAttribute('aria-disabled');
+  els.download.removeAttribute('tabindex');
+  els.open.hidden = false;
+  state.hasPdf = true;
+
+  if (pdf && pdf.available) {
+    show('pdf');
+    try {
+      await pdf.show(blob);
+      return;
+    } catch (err) {
+      console.warn('PDF.js could not render this file, using the browser viewer instead.', err);
+    }
   }
+  views.frame.src = state.pdfUrl;
+  show('frame');
+}
+
+function clearPdf() {
+  if (state.pdfUrl) URL.revokeObjectURL(state.pdfUrl);
+  state.pdfUrl = null;
+  state.hasPdf = false;
+  pdf?.clear();
+  views.frame.removeAttribute('src');
+  els.download.href = '#';
+  els.download.setAttribute('aria-disabled', 'true');
+  els.download.setAttribute('tabindex', '-1');
+  els.open.hidden = true;
 }
 
 function clearResult() {
-  setPdf(null);
+  clearPdf();
   showWarnings([]);
-  state.errorLines = new Map();
+  setErrorLines([]);
   lastPill = { state: 'idle', text: 'Not compiled' };
+  state.compiledVersion = -1;
+  state.attemptedVersion = -1;
   updatePill();
-  els.backendNote.innerHTML = '&nbsp;';
-  renderTree();
-  renderGutter();
+  els.backendNote.innerHTML = '<span>&nbsp;</span>';
+  setTabDot(null);
   show('empty');
 }
 
@@ -528,14 +586,16 @@ function problemItem(p) {
   if (p.file && state.files.has(p.file)) {
     const label = p.line ? `${p.file}:${p.line}` : p.file;
     meta.append(h('button', {
-      type: 'button', class: 'loc', 'aria-label': `Go to ${p.file}${p.line ? `, line ${p.line}` : ''}`,
-      onclick: () => openFile(p.file, p.line),
-    }, label));
+      type: 'button', class: 'loc', title: 'Open in editor',
+      'aria-label': `Go to ${p.file}${p.line ? `, line ${p.line}` : ''}`,
+      onclick: () => openFile(p.file, p.line || 1),
+      html: `${escapeHtml(label)}${svg('arrow')}`,
+    }));
   } else if (p.line) {
     meta.append(h('span', {}, `Line ${p.line}`));
   }
   if (p.context) meta.append(h('code', {}, p.context));
-  return h('li', { class: `problem ${p.severity === 'warning' ? 'warning' : ''}` },
+  return h('li', { class: `problem${p.severity === 'warning' ? ' is-warning' : ''}` },
     h('p', { class: 'problem-msg' }, p.message),
     meta.childNodes.length ? meta : null,
     p.hint ? h('p', { class: 'problem-hint' }, p.hint) : null);
@@ -544,13 +604,12 @@ function problemItem(p) {
 function showWarnings(list) {
   els.warnbar.hidden = !list.length;
   if (!list.length) return;
-  els.warnbarText.textContent = list.length === 1 ? `1 warning: ${list[0].message}` : `${list.length} warnings to check`;
+  els.warnbarText.textContent = list.length === 1 ? list[0].message : `${list.length} things to check before you share this PDF`;
   els.warnbarList.replaceChildren(...list.map(problemItem));
-  const open = els.warnbarToggle.getAttribute('aria-expanded') === 'true';
-  els.warnbarList.hidden = !open;
+  els.warnbarList.hidden = els.warnbarToggle.getAttribute('aria-expanded') !== 'true';
 }
 
-function markErrorLines(problems) {
+function setErrorLines(problems) {
   state.errorLines = new Map();
   for (const p of problems) {
     if (!p.file || !p.line || p.severity === 'warning') continue;
@@ -558,7 +617,7 @@ function markErrorLines(problems) {
     state.errorLines.get(p.file).add(p.line);
   }
   renderTree();
-  if (!els.editorFrame.hidden) renderGutter();
+  editor.setErrorLines([...(state.errorLines.get(state.active) || [])]);
 }
 
 function showErrors(data, warnings) {
@@ -567,17 +626,29 @@ function showErrors(data, warnings) {
   const soft = [...errors.filter((e) => e.severity === 'warning'), ...warnings];
 
   els.errorReason.textContent = data.reason
-    || (hard.length === 1 ? 'The compiler found 1 problem:' : hard.length ? `The compiler found ${hard.length} problems:` : '');
+    || (hard.length ? `The compiler found ${plural(hard.length, 'problem')}. Click a location to jump to it.` : '');
   els.errorList.replaceChildren(...[...hard, ...soft].map(problemItem));
   els.log.textContent = data.log || '';
   els.logDetails.hidden = !data.log;
   els.logDetails.open = !errors.length && !!data.log;
   showWarnings([]);
-  markErrorLines(hard);
+  clearPdf();
+  setErrorLines(hard);
   show('error');
 }
 
-// ---------- Auto compile ----------
+function setTabDot(kind) {
+  els.tabDot.hidden = !kind;
+  els.tabDot.classList.toggle('is-error', kind === 'error');
+}
+
+function describeBackend(backend, service) {
+  return backend === 'local' ? 'local TeX' : (service || 'online compiler');
+}
+
+// =========================================================
+// Auto compile
+// =========================================================
 const AUTO_KEY = 'tex-compiler:auto-compile';
 const AUTO_DELAY_MS = 1500;
 let autoTimer = null;
@@ -591,47 +662,46 @@ function scheduleAutoCompile() {
 
 function setAutoCompile(on) {
   els.auto.checked = on;
-  try { localStorage.setItem(AUTO_KEY, on ? '1' : '0'); } catch { /* ignore */ }
+  store.set(AUTO_KEY, on ? '1' : '0');
   if (on && state.version !== state.attemptedVersion) scheduleAutoCompile();
   if (!on) clearTimeout(autoTimer);
 }
 
-// ---------- Compile ----------
+// =========================================================
+// Compile
+// =========================================================
 async function compile({ auto = false } = {}) {
   clearTimeout(autoTimer);
   if (state.compiling) {
-    // Edits arrived while compiling: run once more when this one finishes.
-    if (auto) autoQueued = true;
+    if (auto) autoQueued = true; // edits arrived mid-compile: run once more afterwards
     return;
   }
-  if (auto && state.version === state.attemptedVersion) return; // nothing new to compile
+  if (auto && state.version === state.attemptedVersion) return;
   if (!state.main) {
     if (auto) return;
-    showErrors({ reason: 'There is no main .tex file. Create one with “New file”, or upload your project.', errors: [] }, []);
-    setPill('error', 'Failed');
+    showErrors({ reason: 'There’s no main .tex file yet. Create one with “New file”, or upload your project.', errors: [] }, []);
+    lastPill = { state: 'error', text: 'Failed' };
+    updatePill();
     return;
   }
 
-  // Pre-compile checks: missing .bib files, images, \input files and citation keys.
   const warnings = checkProject(state.files, state.main);
   const version = state.version;
   state.attemptedVersion = version;
 
   state.compiling = true;
   els.compile.setAttribute('aria-busy', 'true');
-  els.compile.querySelector('.btn-label').textContent = 'Compiling…';
-  setPill('busy', auto ? 'Auto-compiling…' : 'Compiling…');
-  // In auto mode keep the last PDF or error list on screen until the new result arrives.
-  if (!auto || !views.empty.hidden || !views.loading.hidden) {
-    show('loading');
-    showWarnings([]);
-  }
+  els.compile.querySelector('.btn-label').textContent = 'Compiling';
+  els.progress.classList.add('is-active');
+  setPill('busy', 'Compiling');
+  // Keep the previous PDF or error list on screen until the new result arrives.
+  if (!views.empty.hidden) show('loading');
   if (!auto) announce('Compiling…');
 
   try {
     const files = await Promise.all([...state.files].map(async ([path, f]) => (
       f.blob ? { path, base64: await toBase64(f.blob) } : { path, content: f.text })));
-    const res = await fetch('/api/compile', {
+    const res = await fetch('api/compile', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ files, main: state.main, engine: els.engine.value }),
@@ -640,40 +710,55 @@ async function compile({ auto = false } = {}) {
     const engineName = els.engine.options[els.engine.selectedIndex].text;
 
     if (res.ok && type.startsWith('application/pdf')) {
-      setPdf(await res.blob());
-      markErrorLines([]);
-      show('pdf');
+      const blob = await res.blob();
+      setErrorLines([]);
+      await showPdf(blob);
       showWarnings(warnings);
       const secs = (Number(res.headers.get('X-Compile-Ms')) / 1000).toFixed(1);
       state.compiledVersion = version;
-      lastPill = { state: 'ok', text: `Compiled · ${secs}s` };
-      updatePill();
-      els.backendNote.textContent = `${basename(state.main)} · ${engineName} · ${describeBackend(res.headers.get('X-Compile-Backend'))}`;
-      announce(`Compilation succeeded${warnings.length ? ` with ${warnings.length} warning${warnings.length === 1 ? '' : 's'}` : ''}. The PDF preview is updated.`);
-      if (!auto && matchMedia('(max-width: 960px)').matches) els.previewPane.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      lastPill = { state: 'ok', text: `Compiled in ${secs}s` };
+      const pages = pdf?.pageCount;
+      els.backendNote.innerHTML = '';
+      els.backendNote.append(
+        h('span', {}, `${basename(state.main)} · ${engineName}`),
+        pages ? h('span', {}, `· ${plural(pages, 'page')}`) : null,
+        h('span', { class: 'statusbar-spacer' }),
+        h('span', {}, describeBackend(res.headers.get('X-Compile-Backend'), res.headers.get('X-Compile-Service'))),
+      );
+      const note = res.headers.get('X-Compile-Note');
+      if (note) toast(`${decodeURIComponent(note)} Used the backup compiler instead.`);
+      announce(`Compiled successfully${warnings.length ? ` with ${plural(warnings.length, 'warning')}` : ''}.`);
+      if (mobile.matches) {
+        if (!auto) setView('preview');
+        else if (currentView !== 'preview') setTabDot('ok');
+      }
       return;
     }
 
     let data;
     try { data = await res.json(); } catch { data = { reason: `The server responded with HTTP ${res.status}.`, errors: [] }; }
-    setPdf(null);
     showErrors(data, warnings);
-    lastPill = { state: 'error', text: 'Failed' };
-    updatePill();
-    els.backendNote.textContent = data.backend ? `${engineName} · ${describeBackend(data.backend)}` : '\u00a0';
+    lastPill = { state: 'error', text: data.errors?.length ? plural(data.errors.filter((e) => e.severity !== 'warning').length || data.errors.length, 'error') : 'Failed' };
+    els.backendNote.innerHTML = '';
+    els.backendNote.append(h('span', {}, `${engineName}`), h('span', { class: 'statusbar-spacer' }),
+      h('span', {}, data.backend ? describeBackend(data.backend, data.service) : ''));
     const n = (data.errors || []).length;
-    announce(n ? `Compilation failed with ${n} problem${n === 1 ? '' : 's'}.` : 'Compilation failed.');
-    if (!auto) views.error.focus(); // never pull focus away from the editor while typing
+    announce(n ? `Compilation failed with ${plural(n, 'problem')}.` : 'Compilation failed.');
+    if (!auto) {
+      if (mobile.matches) setView('preview');
+      views.error.focus({ preventScroll: true });
+    } else if (mobile.matches && currentView !== 'preview') {
+      setTabDot('error');
+    }
   } catch {
-    setPdf(null);
-    showErrors({ reason: 'Could not reach the app server. Is it still running? Check the terminal where you started it.', errors: [] }, warnings);
-    lastPill = { state: 'error', text: 'Failed' };
-    updatePill();
-    announce('Compilation failed: the app server is unreachable.');
+    showErrors({ reason: 'Couldn’t reach the server. Check your connection and try again.', errors: [] }, warnings);
+    lastPill = { state: 'error', text: 'Offline' };
+    announce('Compilation failed: the server is unreachable.');
   } finally {
     state.compiling = false;
     els.compile.setAttribute('aria-busy', 'false');
     els.compile.querySelector('.btn-label').textContent = 'Compile';
+    els.progress.classList.remove('is-active');
     updatePill();
     if (autoQueued) {
       autoQueued = false;
@@ -682,29 +767,72 @@ async function compile({ auto = false } = {}) {
   }
 }
 
-function describeBackend(backend) {
-  return backend === 'local' ? 'local TeX installation' : 'online compiler (latex.ytotech.com)';
+// =========================================================
+// Layout: mobile tabs, sidebar toggle, resizable split
+// =========================================================
+let currentView = 'editor';
+function setView(view) {
+  currentView = view;
+  els.layout.dataset.view = view;
+  for (const t of els.tabs) t.setAttribute('aria-pressed', String(t.dataset.view === view));
+  if (view === 'preview') setTabDot(null);
+  if (view === 'preview' && pdf?.doc) requestAnimationFrame(() => pdf.fitWidth());
 }
 
-// ---------- Wire up ----------
-els.editor.addEventListener('input', () => {
-  const f = state.files.get(state.active);
-  if (!f || typeof f.text !== 'string') return;
-  f.text = els.editor.value;
-  if (state.errorLines.has(state.active)) {
-    state.errorLines.delete(state.active);
-    renderTree();
-  }
-  renderGutter();
-  changed();
-});
-els.editor.addEventListener('scroll', () => { els.gutter.scrollTop = els.editor.scrollTop; });
-for (const evt of ['keyup', 'click', 'select', 'focus']) els.editor.addEventListener(evt, updateCursor);
+const SIDEBAR_KEY = 'tex-compiler:sidebar';
+function setSidebar(open) {
+  els.layout.classList.toggle('sidebar-hidden', !open);
+  els.toggleSidebar.setAttribute('aria-expanded', String(open));
+  els.toggleSidebar.title = open ? 'Hide files panel' : 'Show files panel';
+  store.set(SIDEBAR_KEY, open ? '1' : '0');
+}
 
+const SPLIT_KEY = 'tex-compiler:split';
+function setSplit(pct) {
+  const v = Math.min(75, Math.max(25, Math.round(pct)));
+  els.layout.style.setProperty('--left', `${v}fr`);
+  els.layout.style.setProperty('--right', `${100 - v}fr`);
+  els.splitter.setAttribute('aria-valuenow', String(v));
+  store.set(SPLIT_KEY, String(v));
+}
+
+function initSplitter() {
+  const start = (e) => {
+    e.preventDefault();
+    els.layout.classList.add('is-resizing');
+    els.splitter.setPointerCapture(e.pointerId);
+    const editorPane = document.querySelector('.pane-editor');
+    const left = editorPane.getBoundingClientRect().left;
+    const total = document.querySelector('.pane-preview').getBoundingClientRect().right - left;
+    const move = (ev) => setSplit(((ev.clientX - left) / total) * 100);
+    const end = () => {
+      els.layout.classList.remove('is-resizing');
+      els.splitter.removeEventListener('pointermove', move);
+      els.splitter.removeEventListener('pointerup', end);
+      els.splitter.removeEventListener('pointercancel', end);
+    };
+    els.splitter.addEventListener('pointermove', move);
+    els.splitter.addEventListener('pointerup', end);
+    els.splitter.addEventListener('pointercancel', end);
+  };
+  els.splitter.addEventListener('pointerdown', start);
+  els.splitter.addEventListener('dblclick', () => setSplit(50));
+  els.splitter.addEventListener('keydown', (e) => {
+    const now = Number(els.splitter.getAttribute('aria-valuenow'));
+    if (e.key === 'ArrowLeft') { e.preventDefault(); setSplit(now - 5); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); setSplit(now + 5); }
+    if (e.key === 'Home') { e.preventDefault(); setSplit(25); }
+    if (e.key === 'End') { e.preventDefault(); setSplit(75); }
+  });
+}
+
+// =========================================================
+// Wire up
+// =========================================================
 els.compile.addEventListener('click', () => compile());
 els.auto.addEventListener('change', () => {
   setAutoCompile(els.auto.checked);
-  toast(els.auto.checked ? 'Auto compile is on. The PDF updates shortly after you stop typing.' : 'Auto compile is off.');
+  toast(els.auto.checked ? 'Auto compile is on — the PDF updates shortly after you stop typing.' : 'Auto compile is off.');
 });
 els.engine.addEventListener('change', () => changed());
 els.newFile.addEventListener('click', newFile);
@@ -714,6 +842,12 @@ els.reset.addEventListener('click', resetProject);
 els.setMain.addEventListener('click', setActiveAsMain);
 els.rename.addEventListener('click', renameActive);
 els.del.addEventListener('click', deleteActive);
+els.toggleSidebar.addEventListener('click', () => setSidebar(els.layout.classList.contains('sidebar-hidden')));
+for (const t of els.tabs) t.addEventListener('click', () => setView(t.dataset.view));
+
+els.zoomIn.addEventListener('click', () => pdf?.zoomBy(1.2));
+els.zoomOut.addEventListener('click', () => pdf?.zoomBy(1 / 1.2));
+els.zoomLabel.addEventListener('click', () => pdf?.fitWidth());
 
 els.fileInput.addEventListener('change', async () => {
   const entries = [...els.fileInput.files].map((file) => ({ file, path: file.name }));
@@ -727,55 +861,63 @@ els.folderInput.addEventListener('change', async () => {
   await addEntries(entries, { folderName: root || 'folder' });
 });
 
-// Drag and drop onto the sidebar (files or a whole folder).
+// Drag and drop onto the files panel (files or a whole folder).
 let dragDepth = 0;
+const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
 els.dropzone.addEventListener('dragenter', (e) => {
-  if (![...(e.dataTransfer?.types || [])].includes('Files')) return;
+  if (!hasFiles(e)) return;
   e.preventDefault();
   dragDepth++;
-  els.dropzone.classList.add('dragging');
+  els.dropzone.classList.add('is-dragging');
 });
-els.dropzone.addEventListener('dragover', (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files')) e.preventDefault(); });
+els.dropzone.addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault(); });
 els.dropzone.addEventListener('dragleave', () => {
   dragDepth = Math.max(0, dragDepth - 1);
-  if (!dragDepth) els.dropzone.classList.remove('dragging');
+  if (!dragDepth) els.dropzone.classList.remove('is-dragging');
 });
 els.dropzone.addEventListener('drop', async (e) => {
   e.preventDefault();
   dragDepth = 0;
-  els.dropzone.classList.remove('dragging');
+  els.dropzone.classList.remove('is-dragging');
   const { entries, folder } = await filesFromDrop(e.dataTransfer);
-  if (folder) {
-    const { entries: stripped } = stripCommonRoot(entries);
-    await addEntries(stripped, { folderName: folder });
-  } else {
-    await addEntries(entries);
-  }
+  if (folder) await addEntries(stripCommonRoot(entries).entries, { folderName: folder });
+  else await addEntries(entries);
 });
-// Avoid the browser opening a file dropped elsewhere on the page.
 window.addEventListener('dragover', (e) => e.preventDefault());
 window.addEventListener('drop', (e) => e.preventDefault());
 
 els.warnbarToggle.addEventListener('click', () => {
   const open = els.warnbarToggle.getAttribute('aria-expanded') !== 'true';
   els.warnbarToggle.setAttribute('aria-expanded', String(open));
-  els.warnbarToggle.querySelector('.warnbar-chev').textContent = open ? 'Hide' : 'Show';
+  els.warnbarToggle.querySelector('.warnbar-action').textContent = open ? 'Hide' : 'Show';
   els.warnbarList.hidden = !open;
 });
 
 document.addEventListener('keydown', (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && e.key === 'Enter') {
     e.preventDefault();
     compile();
-  } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+  } else if (mod && e.key.toLowerCase() === 's') {
     e.preventDefault();
-    toast('Your project is saved automatically in this browser.');
+    toast('Your project saves automatically in this browser.');
   }
 });
 
 if (/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) els.compileKbd.textContent = '⌘ ↵';
 
-// ---------- Start ----------
+// =========================================================
+// Start
+// =========================================================
+initSplitter();
+setSplit(Number(store.get(SPLIT_KEY)) || 50);
+setSidebar(store.get(SIDEBAR_KEY) !== '0');
+setView('editor');
+
+// pdf.min.js is a deferred script placed before this module, so it has already run.
+// If it failed to load, PdfViewer reports unavailable and we fall back to the browser's viewer.
+pdf = new PdfViewer(views.pdf, { pageLabel: els.pageLabel, zoomLabel: els.zoomLabel });
+
 (async () => {
   const saved = await loadProject();
   if (saved && saved.files.length) {
@@ -785,7 +927,10 @@ if (/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) els.compi
   } else {
     setProject(Object.entries(STARTER_FILES).map(([path, text]) => ({ path, text })), STARTER_MAIN);
   }
+  els.saveState.textContent = 'Saved';
   show('empty');
-  try { if (localStorage.getItem(AUTO_KEY) === '1') els.auto.checked = true; } catch { /* ignore */ }
-  if (els.auto.checked) compile({ auto: true });
+  if (store.get(AUTO_KEY) === '1') {
+    els.auto.checked = true;
+    compile({ auto: true });
+  }
 })();
