@@ -1,0 +1,21 @@
+# Run on your own server:  docker compose up -d --build
+# Then put it behind HTTPS (see README → "Your own server").
+services:
+  tex-compiler:
+    build: .
+    image: tex-compiler
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"   # only reachable through your reverse proxy
+    environment:
+      COMPILE_RATE_LIMIT: "30"
+      MAX_CONCURRENT_COMPILES: "2"
+    # Keep a runaway document from taking the whole machine down.
+    mem_limit: 2g
+    cpus: 2
+    read_only: true
+    tmpfs:
+      - /tmp:size=1g
+      - /home/texc/.texlive:size=256m
+    security_opt:
+      - no-new-privileges:true

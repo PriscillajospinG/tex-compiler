@@ -1,0 +1,12 @@
+# One-click deploy on Render: New → Blueprint → pick this repository.
+services:
+  - type: web
+    name: tex-compiler
+    runtime: docker
+    plan: starter          # TeX needs ~1 GB RAM for bigger documents; the free plan may run out of memory
+    healthCheckPath: /healthz
+    envVars:
+      - key: COMPILE_RATE_LIMIT
+        value: "30"
+      - key: MAX_CONCURRENT_COMPILES
+        value: "2"
