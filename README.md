@@ -4,6 +4,23 @@ A friendly web app for writing LaTeX and turning it into a PDF. Write or upload 
 
 You can run it on your own computer in a few minutes, or host it as a website for others.
 
+## 🌐 Try it online
+
+**👉 [tex-compiler.vercel.app](https://tex-compiler.vercel.app/)**
+
+No installation needed. Open the link, edit the example, and press **Compile**.
+
+> [!IMPORTANT]
+> **Compiling large documents? Install TeX locally first.**
+> The online version has no TeX of its own. It sends your files to a free online compile service. That works well for small and medium documents, but:
+> - **Large projects** (many pages, big images, heavy TikZ, long bibliographies) can be slow, hit the hosting's upload limit (about 4.5 MB per compile), or time out.
+> - The free compile service is sometimes **unavailable**.
+> - Your files are **sent to a third-party service** to be compiled.
+>
+> For large or private documents, run the app on your own computer with TeX installed. Compiling is then fast, has no size limits, and works offline:
+> 1. [Install TeX](#option-b-nodejs-only) (MacTeX, TeX Live or MiKTeX) and run `npm start`, **or**
+> 2. Use [Docker](#option-a-docker-recommended), which includes TeX, so there's nothing else to install.
+
 **Features**
 - **Editor:** LaTeX syntax highlighting, line numbers, and errors marked in the margin.
 - **Projects:** multiple files and folders. Upload files or whole folders, or drag them in. Images and `.bib` bibliographies (BibTeX and Biber) work.
