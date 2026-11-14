@@ -702,6 +702,33 @@ kbd {
 }
 @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } }
 
+/* First-visit notice */
+.notice { width: min(520px, calc(100vw - 32px)); }
+.notice-body { padding: 26px 26px 20px !important; }
+.notice-icon {
+  display: grid; place-items: center; width: 40px; height: 40px; margin-bottom: 14px;
+  border-radius: 12px; background: var(--accent-soft); color: var(--accent);
+}
+.notice-icon .icon { width: 22px; height: 22px; }
+.notice h2 { font-size: 19px; }
+.notice-callout {
+  margin: 0 0 16px; padding: 14px 16px;
+  border: 1px solid var(--warn-line); border-radius: var(--r-md); background: var(--warn-soft);
+}
+.notice .notice-callout p { margin: 0; color: var(--ink-2); font-size: 13.5px; }
+.notice .notice-callout .notice-callout-title { margin-bottom: 8px; color: var(--warn); font-weight: 600; font-size: 14px; }
+.notice-callout ul { margin: 0 0 10px; padding-left: 18px; color: var(--ink-2); font-size: 13.5px; line-height: 1.55; }
+.notice-callout li + li { margin-top: 4px; }
+.notice-check {
+  display: inline-flex; align-items: center; gap: 8px; margin-bottom: 18px;
+  color: var(--ink-2); font-size: 13.5px; cursor: pointer;
+}
+.notice-check input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+@media (max-width: 560px) {
+  .notice .dialog-actions { flex-direction: column-reverse; }
+  .notice .dialog-actions .btn { width: 100%; }
+}
+
 /* =========================================================
    Responsive
    ========================================================= */

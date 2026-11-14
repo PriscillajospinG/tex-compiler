@@ -918,7 +918,27 @@ setView('editor');
 // If it failed to load, PdfViewer reports unavailable and we fall back to the browser's viewer.
 pdf = new PdfViewer(views.pdf, { pageLabel: els.pageLabel, zoomLabel: els.zoomLabel });
 
+// First-visit notice: only when this deployment compiles with the online service (no TeX on the server).
+const NOTICE_KEY = 'tex-compiler:notice-dismissed';
+async function showNoticeIfRemote() {
+  if (store.get(NOTICE_KEY) === '1') return;
+  let backend = null;
+  try {
+    const res = await fetch('healthz', { cache: 'no-store' });
+    backend = (await res.json()).backend;
+  } catch { return; }
+  if (backend !== 'remote') return;
+  const dialog = $('notice');
+  dialog.addEventListener('close', () => {
+    if ($('notice-dismiss').checked) store.set(NOTICE_KEY, '1');
+    editor.focus();
+  }, { once: true });
+  dialog.showModal();
+  $('notice-ok').focus();
+}
+
 (async () => {
+  showNoticeIfRemote();
   const saved = await loadProject();
   if (saved && saved.files.length) {
     setProject(saved.files, saved.main);

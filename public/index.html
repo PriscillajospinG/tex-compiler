@@ -267,6 +267,34 @@
     </form>
   </dialog>
 
+  <!-- Shown on first visit when the site compiles with the online service (e.g. on Vercel) -->
+  <dialog id="notice" class="dialog notice" aria-labelledby="notice-title" aria-describedby="notice-intro">
+    <form method="dialog" class="notice-body">
+      <div class="notice-icon" aria-hidden="true">
+        <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 7.8h.01"/></svg>
+      </div>
+      <h2 id="notice-title">Before you start</h2>
+      <p id="notice-intro">This online version compiles your LaTeX with a free online service. It works well for small and medium documents.</p>
+      <div class="notice-callout">
+        <p class="notice-callout-title">Compiling large documents? Install TeX locally first.</p>
+        <ul>
+          <li><strong>Large projects</strong> (many pages, big images, heavy TikZ, long bibliographies) can be slow, exceed the upload limit (about 4.5&nbsp;MB), or time out.</li>
+          <li>The free compile service is <strong>sometimes unavailable</strong>.</li>
+          <li>Your files are <strong>sent to a third-party service</strong> to be compiled.</li>
+        </ul>
+        <p>For large or private documents, run this app on your own computer with TeX installed. It's free, fast and has no size limits.</p>
+      </div>
+      <label class="notice-check">
+        <input type="checkbox" id="notice-dismiss">
+        <span>Don’t show this again</span>
+      </label>
+      <div class="dialog-actions">
+        <a class="btn btn-secondary" href="https://github.com/PriscillajospinG/tex-compiler#1-quick-start" target="_blank" rel="noopener">How to run it locally</a>
+        <button type="submit" class="btn btn-primary" id="notice-ok">Continue to the editor</button>
+      </div>
+    </form>
+  </dialog>
+
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
   <script type="module" src="js/app.js"></script>
